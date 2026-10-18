@@ -1,0 +1,1319 @@
+package com.mycompany.wildliferescue;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.Scanner;
+
+// ==========================================================
+// RESCUABLE INTERFACE
+// ==========================================================
+
+interface Rescuable {
+
+    void startRescue();
+
+    void completeRescue();
+
+    String generateSummary();
+}
+
+// ==========================================================
+// ENUMS
+// ==========================================================
+
+enum RescueStatus {
+    REPORTED,
+    IN_PROGRESS,
+    COMPLETED
+}
+
+enum RescuePriority {
+    LOW,
+    MEDIUM,
+    HIGH,
+    CRITICAL
+}
+
+// ==========================================================
+// ABSTRACT RESCUE CASE
+// ==========================================================
+
+abstract class RescueCase implements Rescuable {
+
+    private final String caseId;
+    private final String animalName;
+    private final String species;
+    private final String location;
+    private final String ranger;
+    private final int rescueDays;
+    private final double dailyCareCost;
+
+    private RescueStatus status;
+
+    public RescueCase(
+            String caseId,
+            String animalName,
+            String species,
+            String location,
+            String ranger,
+            int rescueDays,
+            double dailyCareCost) {
+
+        this.caseId = requireText(caseId, "Case ID");
+        this.animalName = requireText(animalName, "Animal name");
+        this.species = requireText(species, "Species");
+        this.location = requireText(location, "Location");
+        this.ranger = requireText(ranger, "Ranger");
+
+        if (rescueDays <= 0) {
+            throw new IllegalArgumentException(
+                    "Rescue days must be greater than 0.");
+        }
+
+        if (dailyCareCost < 0) {
+            throw new IllegalArgumentException(
+                    "Daily care cost cannot be negative.");
+        }
+
+        this.rescueDays = rescueDays;
+        this.dailyCareCost = dailyCareCost;
+        this.status = RescueStatus.REPORTED;
+    }
+
+    private static String requireText(
+            String value,
+            String fieldName) {
+
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalArgumentException(
+                    fieldName + " cannot be empty.");
+        }
+
+        return value.trim();
+    }
+
+    protected static double requireNonNegative(
+            double value,
+            String fieldName) {
+
+        if (value < 0) {
+            throw new IllegalArgumentException(
+                    fieldName + " cannot be negative.");
+        }
+
+        return value;
+    }
+
+    // ======================================================
+    // ABSTRACT METHODS
+    // ======================================================
+
+    public abstract String getRescueType();
+
+    public abstract double calculateAdditionalCost();
+
+    public abstract RescuePriority determinePriority();
+
+    protected abstract String getSpecificDetails();
+
+    // ======================================================
+    // TOTAL COST
+    // ======================================================
+
+    public double calculateTotalCost() {
+
+        return (rescueDays * dailyCareCost)
+                + calculateAdditionalCost();
+    }
+
+    // ======================================================
+    // START RESCUE
+    // ======================================================
+
+    @Override
+    public void startRescue() {
+
+        if (status == RescueStatus.REPORTED) {
+
+            status = RescueStatus.IN_PROGRESS;
+
+        } else if (status == RescueStatus.IN_PROGRESS) {
+
+            throw new IllegalStateException(
+                    "Rescue is already in progress.");
+
+        } else {
+
+            throw new IllegalStateException(
+                    "Completed rescue cannot be started again.");
+        }
+    }
+
+    // ======================================================
+    // COMPLETE RESCUE
+    // ======================================================
+
+    @Override
+    public void completeRescue() {
+
+        if (null == status) {
+            
+            throw new IllegalStateException(
+                    "Rescue is already completed.");
+        } else switch (status) {
+            case REPORTED:
+                throw new IllegalStateException(
+                        "Rescue must be started before it can be completed.");
+            case IN_PROGRESS:
+                status = RescueStatus.COMPLETED;
+                break;
+            default:
+                throw new IllegalStateException(
+                        "Rescue is already completed.");
+        }
+    }
+
+    // ======================================================
+    // SUMMARY
+    // ======================================================
+
+    @Override
+    public String generateSummary() {
+
+        return """
+               
+               ----------------------------------------
+               RESCUE CASE SUMMARY
+               ----------------------------------------
+               Case ID       : """ + caseId + "\n"
+                + "Rescue Type   : " + getRescueType() + "\n"
+                + "Animal Name   : " + animalName + "\n"
+                + "Species       : " + species + "\n"
+                + "Location      : " + location + "\n"
+                + "Ranger        : " + ranger + "\n"
+                + "Rescue Days   : " + rescueDays + "\n"
+                + "Daily Cost    : " + formatMoney(dailyCareCost) + "\n"
+                + "Priority      : " + determinePriority() + "\n"
+                + "Status        : " + status + "\n"
+                + "Extra Details : " + getSpecificDetails() + "\n"
+                + "Total Cost    : " + formatMoney(calculateTotalCost()) + "\n"
+                + "----------------------------------------\n";
+    }
+
+    protected String formatMoney(double amount) {
+
+        return String.format(
+                Locale.US,
+                "R%.2f",
+                amount);
+    }
+
+    // ======================================================
+    // GETTERS
+    // ======================================================
+
+    public String getCaseId() {
+        return caseId;
+    }
+
+    public String getAnimalName() {
+        return animalName;
+    }
+
+    public String getSpecies() {
+        return species;
+    }
+
+    public String getLocation() {
+        return location;
+    }
+
+    public String getRanger() {
+        return ranger;
+    }
+
+    public int getRescueDays() {
+        return rescueDays;
+    }
+
+    public double getDailyCareCost() {
+        return dailyCareCost;
+    }
+
+    public RescueStatus getStatus() {
+        return status;
+    }
+
+    @Override
+    public String toString() {
+
+        return generateSummary();
+    }
+}
+
+// ==========================================================
+// INJURED ANIMAL RESCUE
+// ==========================================================
+
+class InjuredAnimalRescue extends RescueCase {
+
+    public static final double SURGERY_FEE = 5000.00;
+
+    private static final double HIGH_VET_COST_THRESHOLD = 10000.00;
+
+    private final String injuryDescription;
+    private final double veterinaryCost;
+    private final boolean surgeryRequired;
+
+    public InjuredAnimalRescue(
+            String caseId,
+            String animalName,
+            String species,
+            String location,
+            String ranger,
+            int rescueDays,
+            double dailyCareCost,
+            String injuryDescription,
+            double veterinaryCost,
+            boolean surgeryRequired) {
+
+        super(
+                caseId,
+                animalName,
+                species,
+                location,
+                ranger,
+                rescueDays,
+                dailyCareCost);
+
+        if (injuryDescription == null
+                || injuryDescription.trim().isEmpty()) {
+
+            throw new IllegalArgumentException(
+                    "Injury description cannot be empty.");
+        }
+
+        this.injuryDescription =
+                injuryDescription.trim();
+
+        this.veterinaryCost =
+                requireNonNegative(
+                        veterinaryCost,
+                        "Veterinary cost");
+
+        this.surgeryRequired =
+                surgeryRequired;
+    }
+
+    @Override
+    public String getRescueType() {
+
+        return "Injured Animal Rescue";
+    }
+
+    @Override
+    public double calculateAdditionalCost() {
+
+        double total = veterinaryCost;
+
+        if (surgeryRequired) {
+            total += SURGERY_FEE;
+        }
+
+        return total;
+    }
+
+    @Override
+    public RescuePriority determinePriority() {
+
+        if (surgeryRequired) {
+            return RescuePriority.CRITICAL;
+        }
+
+        if (veterinaryCost >= HIGH_VET_COST_THRESHOLD) {
+            return RescuePriority.HIGH;
+        }
+
+        return RescuePriority.MEDIUM;
+    }
+
+    @Override
+    protected String getSpecificDetails() {
+
+        return "Injury: "
+                + injuryDescription
+                + ", Veterinary Cost: "
+                + formatMoney(veterinaryCost)
+                + ", Surgery Required: "
+                + (surgeryRequired ? "Yes" : "No");
+    }
+}
+
+// ==========================================================
+// ORPHANED ANIMAL RESCUE
+// ==========================================================
+
+class OrphanedAnimalRescue extends RescueCase {
+
+    public static final double FOSTER_CARE_FEE = 2500.00;
+
+    private final int ageInMonths;
+    private final double feedingCost;
+    private final boolean fosterCareRequired;
+
+    public OrphanedAnimalRescue(
+            String caseId,
+            String animalName,
+            String species,
+            String location,
+            String ranger,
+            int rescueDays,
+            double dailyCareCost,
+            int ageInMonths,
+            double feedingCost,
+            boolean fosterCareRequired) {
+
+        super(
+                caseId,
+                animalName,
+                species,
+                location,
+                ranger,
+                rescueDays,
+                dailyCareCost);
+
+        if (ageInMonths < 0) {
+            throw new IllegalArgumentException(
+                    "Age cannot be negative.");
+        }
+
+        this.ageInMonths =
+                ageInMonths;
+
+        this.feedingCost =
+                requireNonNegative(
+                        feedingCost,
+                        "Feeding cost");
+
+        this.fosterCareRequired =
+                fosterCareRequired;
+    }
+
+    @Override
+    public String getRescueType() {
+
+        return "Orphaned Animal Rescue";
+    }
+
+    @Override
+    public double calculateAdditionalCost() {
+
+        double total = feedingCost;
+
+        if (fosterCareRequired) {
+            total += FOSTER_CARE_FEE;
+        }
+
+        return total;
+    }
+
+    @Override
+    public RescuePriority determinePriority() {
+
+        if (ageInMonths <= 3) {
+            return RescuePriority.HIGH;
+        }
+
+        if (ageInMonths <= 12) {
+            return RescuePriority.MEDIUM;
+        }
+
+        return RescuePriority.LOW;
+    }
+
+    @Override
+    protected String getSpecificDetails() {
+
+        return "Age: "
+                + ageInMonths
+                + " months"
+                + ", Feeding Cost: "
+                + formatMoney(feedingCost)
+                + ", Foster Care Required: "
+                + (fosterCareRequired ? "Yes" : "No");
+    }
+}
+
+// ==========================================================
+// ENDANGERED SPECIES RESCUE
+// ==========================================================
+
+class EndangeredSpeciesRescue extends RescueCase {
+
+    public static final double SPECIALIST_TEAM_FEE = 8000.00;
+
+    private final String classification;
+    private final double securityCost;
+    private final boolean specialistTeamRequired;
+
+    public EndangeredSpeciesRescue(
+            String caseId,
+            String animalName,
+            String species,
+            String location,
+            String ranger,
+            int rescueDays,
+            double dailyCareCost,
+            String classification,
+            double securityCost,
+            boolean specialistTeamRequired) {
+
+        super(
+                caseId,
+                animalName,
+                species,
+                location,
+                ranger,
+                rescueDays,
+                dailyCareCost);
+
+        if (classification == null
+                || classification.trim().isEmpty()) {
+
+            throw new IllegalArgumentException(
+                    "Classification cannot be empty.");
+        }
+
+        this.classification =
+                classification.trim();
+
+        this.securityCost =
+                requireNonNegative(
+                        securityCost,
+                        "Security cost");
+
+        this.specialistTeamRequired =
+                specialistTeamRequired;
+    }
+
+    @Override
+    public String getRescueType() {
+
+        return "Endangered Species Rescue";
+    }
+
+    @Override
+    public double calculateAdditionalCost() {
+
+        double total = securityCost;
+
+        if (specialistTeamRequired) {
+            total += SPECIALIST_TEAM_FEE;
+        }
+
+        return total;
+    }
+
+    @Override
+    public RescuePriority determinePriority() {
+
+        if (specialistTeamRequired
+                || classification.equalsIgnoreCase(
+                        "Critically Endangered")) {
+
+            return RescuePriority.CRITICAL;
+        }
+
+        return RescuePriority.HIGH;
+    }
+
+    @Override
+    protected String getSpecificDetails() {
+
+        return "Classification: "
+                + classification
+                + ", Security Cost: "
+                + formatMoney(securityCost)
+                + ", Specialist Team Required: "
+                + (specialistTeamRequired ? "Yes" : "No");
+    }
+}
+
+// ==========================================================
+// RESCUE MANAGER
+// ==========================================================
+
+class RescueManager {
+
+    private final ArrayList<RescueCase> cases;
+
+    public RescueManager() {
+
+        cases = new ArrayList<>();
+    }
+
+    // ======================================================
+    // ADD CASE
+    // ======================================================
+
+    public void addCase(RescueCase rescueCase) {
+
+        if (rescueCase == null) {
+
+            throw new IllegalArgumentException(
+                    "Rescue case cannot be null.");
+        }
+
+        if (findById(rescueCase.getCaseId()) != null) {
+
+            throw new IllegalArgumentException(
+                    "A rescue case with ID "
+                    + rescueCase.getCaseId()
+                    + " already exists.");
+        }
+
+        cases.add(rescueCase);
+    }
+
+    // ======================================================
+    // SEARCH CASE
+    // ======================================================
+
+    public RescueCase findById(String caseId) {
+
+        if (caseId == null) {
+            return null;
+        }
+
+        for (RescueCase rescueCase : cases) {
+
+            if (rescueCase.getCaseId()
+                    .equalsIgnoreCase(caseId.trim())) {
+
+                return rescueCase;
+            }
+        }
+
+        return null;
+    }
+
+    // ======================================================
+    // START RESCUE
+    // ======================================================
+
+    public void startRescue(String caseId) {
+
+        RescueCase rescueCase =
+                findById(caseId);
+
+        if (rescueCase == null) {
+
+            throw new IllegalArgumentException(
+                    "Rescue case not found.");
+        }
+
+        rescueCase.startRescue();
+    }
+
+    // ======================================================
+    // COMPLETE RESCUE
+    // ======================================================
+
+    public void completeRescue(String caseId) {
+
+        RescueCase rescueCase =
+                findById(caseId);
+
+        if (rescueCase == null) {
+
+            throw new IllegalArgumentException(
+                    "Rescue case not found.");
+        }
+
+        rescueCase.completeRescue();
+    }
+
+    // ======================================================
+    // GET CASES
+    // ======================================================
+
+    public List<RescueCase> getCases() {
+
+        return Collections.unmodifiableList(cases);
+    }
+
+    public int getCaseCount() {
+
+        return cases.size();
+    }
+
+    // ======================================================
+    // TOTAL ESTIMATED COST
+    // ======================================================
+
+    public double calculateTotalEstimatedCost() {
+
+        double total = 0.0;
+
+        for (RescueCase rescueCase : cases) {
+
+            total +=
+                    rescueCase.calculateTotalCost();
+        }
+
+        return total;
+    }
+
+    // ======================================================
+    // REPORT
+    // ======================================================
+
+    public String generateReport() {
+
+        StringBuilder report =
+                new StringBuilder();
+
+        report.append("\n");
+        report.append("========================================\n");
+        report.append("       WILDLIFE SA RESCUE REPORT\n");
+        report.append("========================================\n");
+
+        report.append("Total Rescue Cases: ")
+                .append(getCaseCount())
+                .append("\n");
+
+        report.append("Total Estimated Cost: ")
+                .append(String.format(
+                        Locale.US,
+                        "R%.2f",
+                        calculateTotalEstimatedCost()))
+                .append("\n");
+
+        report.append("----------------------------------------\n");
+
+        for (RescueCase rescueCase : cases) {
+
+            report.append("ID: ")
+                    .append(rescueCase.getCaseId())
+                    .append(" | ");
+
+            report.append("Type: ")
+                    .append(rescueCase.getRescueType())
+                    .append(" | ");
+
+            report.append("Priority: ")
+                    .append(rescueCase.determinePriority())
+                    .append(" | ");
+
+            report.append("Status: ")
+                    .append(rescueCase.getStatus())
+                    .append(" | ");
+
+            report.append("Cost: ")
+                    .append(String.format(
+                            Locale.US,
+                            "R%.2f",
+                            rescueCase.calculateTotalCost()))
+                    .append("\n");
+        }
+
+        report.append("========================================\n");
+
+        return report.toString();
+    }
+}
+
+// ==========================================================
+// MAIN PROGRAM
+// ==========================================================
+
+public class Main {
+
+    private static final Scanner scanner =
+            new Scanner(System.in);
+
+    private static final RescueManager manager =
+            new RescueManager();
+
+    public static void main(String[] args) {
+
+        boolean running = true;
+
+        System.out.println("========================================");
+        System.out.println(" WILDLIFE SA RESCUE OPERATIONS SYSTEM");
+        System.out.println("========================================");
+
+        while (running) {
+
+            displayMenu();
+
+            int choice =
+                    readInt("Enter your choice: ");
+
+            try {
+
+                switch (choice) {
+
+                    case 1:
+                        registerInjuredAnimal();
+                        break;
+
+                    case 2:
+                        registerOrphanedAnimal();
+                        break;
+
+                    case 3:
+                        registerEndangeredSpecies();
+                        break;
+
+                    case 4:
+                        searchCase();
+                        break;
+
+                    case 5:
+                        updateStatus();
+                        break;
+
+                    case 6:
+                        displayAllCases();
+                        break;
+
+                    case 7:
+                        System.out.println(
+                                manager.generateReport());
+                        break;
+
+                    case 8:
+                        startRescue();
+                        break;
+
+                    case 9:
+                        completeRescue();
+                        break;
+
+                    case 10:
+                        running = false;
+
+                        System.out.println(
+                                "Thank you for using the "
+                                + "Wildlife SA Rescue System.");
+
+                        break;
+
+                    default:
+                        System.out.println(
+                                "Invalid choice. "
+                                + "Please select a number "
+                                + "from 1 to 10.");
+                }
+
+            } catch (IllegalArgumentException
+                    | IllegalStateException e) {
+
+                System.out.println(
+                        "Error: " + e.getMessage());
+            }
+        }
+
+        scanner.close();
+    }
+
+    // ======================================================
+    // MENU
+    // ======================================================
+
+    private static void displayMenu() {
+
+        System.out.println();
+        System.out.println("-------------- MENU --------------");
+        System.out.println("1. Register Injured Animal Rescue");
+        System.out.println("2. Register Orphaned Animal Rescue");
+        System.out.println("3. Register Endangered Species Rescue");
+        System.out.println("4. Search Rescue Case");
+        System.out.println("5. Update Rescue Status");
+        System.out.println("6. Display All Rescue Cases");
+        System.out.println("7. Generate Rescue Report");
+        System.out.println("8. Start Rescue");
+        System.out.println("9. Complete Rescue");
+        System.out.println("10. Exit");
+        System.out.println("----------------------------------");
+    }
+
+    // ======================================================
+    // REGISTER INJURED ANIMAL
+    // ======================================================
+
+    private static void registerInjuredAnimal() {
+
+        System.out.println(
+                "\n--- Register Injured Animal ---");
+
+        String caseId =
+                readText("Case ID: ");
+
+        String animalName =
+                readText("Animal name: ");
+
+        String species =
+                readText("Species: ");
+
+        String location =
+                readText("Rescue location: ");
+
+        String ranger =
+                readText("Ranger name: ");
+
+        int rescueDays =
+                readPositiveInt(
+                        "Expected rescue days: ");
+
+        double dailyCareCost =
+                readNonNegativeDouble(
+                        "Daily care cost: ");
+
+        String injuryDescription =
+                readText(
+                        "Injury description: ");
+
+        double veterinaryCost =
+                readNonNegativeDouble(
+                        "Veterinary cost: ");
+
+        boolean surgeryRequired =
+                readYesNo(
+                        "Is surgery required? (Y/N): ");
+
+        InjuredAnimalRescue rescue =
+                new InjuredAnimalRescue(
+                        caseId,
+                        animalName,
+                        species,
+                        location,
+                        ranger,
+                        rescueDays,
+                        dailyCareCost,
+                        injuryDescription,
+                        veterinaryCost,
+                        surgeryRequired);
+
+        manager.addCase(rescue);
+
+        System.out.println(
+                "Injured animal rescue case "
+                + "registered successfully.");
+    }
+
+    // ======================================================
+    // REGISTER ORPHANED ANIMAL
+    // ======================================================
+
+    private static void registerOrphanedAnimal() {
+
+        System.out.println(
+                "\n--- Register Orphaned Animal ---");
+
+        String caseId =
+                readText("Case ID: ");
+
+        String animalName =
+                readText("Animal name: ");
+
+        String species =
+                readText("Species: ");
+
+        String location =
+                readText("Rescue location: ");
+
+        String ranger =
+                readText("Ranger name: ");
+
+        int rescueDays =
+                readPositiveInt(
+                        "Expected rescue days: ");
+
+        double dailyCareCost =
+                readNonNegativeDouble(
+                        "Daily care cost: ");
+
+        int ageInMonths =
+                readNonNegativeInt(
+                        "Animal age in months: ");
+
+        double feedingCost =
+                readNonNegativeDouble(
+                        "Feeding cost: ");
+
+        boolean fosterCareRequired =
+                readYesNo(
+                        "Is foster care required? (Y/N): ");
+
+        OrphanedAnimalRescue rescue =
+                new OrphanedAnimalRescue(
+                        caseId,
+                        animalName,
+                        species,
+                        location,
+                        ranger,
+                        rescueDays,
+                        dailyCareCost,
+                        ageInMonths,
+                        feedingCost,
+                        fosterCareRequired);
+
+        manager.addCase(rescue);
+
+        System.out.println(
+                "Orphaned animal rescue case "
+                + "registered successfully.");
+    }
+
+    // ======================================================
+    // REGISTER ENDANGERED SPECIES
+    // ======================================================
+
+    private static void registerEndangeredSpecies() {
+
+        System.out.println(
+                "\n--- Register Endangered Species ---");
+
+        String caseId =
+                readText("Case ID: ");
+
+        String animalName =
+                readText("Animal name: ");
+
+        String species =
+                readText("Species: ");
+
+        String location =
+                readText("Rescue location: ");
+
+        String ranger =
+                readText("Ranger name: ");
+
+        int rescueDays =
+                readPositiveInt(
+                        "Expected rescue days: ");
+
+        double dailyCareCost =
+                readNonNegativeDouble(
+                        "Daily care cost: ");
+
+        String classification =
+                readText(
+                        "Conservation classification: ");
+
+        double securityCost =
+                readNonNegativeDouble(
+                        "Security cost: ");
+
+        boolean specialistTeamRequired =
+                readYesNo(
+                        "Is a specialist team required? (Y/N): ");
+
+        EndangeredSpeciesRescue rescue =
+                new EndangeredSpeciesRescue(
+                        caseId,
+                        animalName,
+                        species,
+                        location,
+                        ranger,
+                        rescueDays,
+                        dailyCareCost,
+                        classification,
+                        securityCost,
+                        specialistTeamRequired);
+
+        manager.addCase(rescue);
+
+        System.out.println(
+                "Endangered species rescue case "
+                + "registered successfully.");
+    }
+
+    // ======================================================
+    // SEARCH
+    // ======================================================
+
+    private static void searchCase() {
+
+        String caseId =
+                readText(
+                        "Enter case ID to search: ");
+
+        RescueCase rescueCase =
+                manager.findById(caseId);
+
+        if (rescueCase == null) {
+
+            System.out.println(
+                    "No rescue case was found "
+                    + "with ID: " + caseId);
+
+        } else {
+
+            System.out.println(
+                    rescueCase.generateSummary());
+        }
+    }
+
+    // ======================================================
+    // UPDATE STATUS
+    // ======================================================
+
+    private static void updateStatus() {
+
+        String caseId =
+                readText("Enter case ID: ");
+
+        RescueCase rescueCase =
+                manager.findById(caseId);
+
+        if (rescueCase == null) {
+
+            System.out.println(
+                    "Rescue case not found.");
+
+            return;
+        }
+
+        System.out.println(
+                "Current status: "
+                + rescueCase.getStatus());
+
+        System.out.println(
+                "1. Start Rescue");
+
+        System.out.println(
+                "2. Complete Rescue");
+
+        int choice =
+                readInt(
+                        "Choose status action: ");
+
+        if (choice == 1) {
+
+            manager.startRescue(caseId);
+
+            System.out.println(
+                    "Rescue status updated to "
+                    + "IN_PROGRESS.");
+
+        } else if (choice == 2) {
+
+            manager.completeRescue(caseId);
+
+            System.out.println(
+                    "Rescue status updated to "
+                    + "COMPLETED.");
+
+        } else {
+
+            System.out.println(
+                    "Invalid status option.");
+        }
+    }
+
+    // ======================================================
+    // DISPLAY ALL CASES
+    // ======================================================
+
+    private static void displayAllCases() {
+
+        if (manager.getCaseCount() == 0) {
+
+            System.out.println(
+                    "There are currently no "
+                    + "rescue cases.");
+
+            return;
+        }
+
+        System.out.println(
+                "\n========== ALL RESCUE CASES ==========");
+
+        for (RescueCase rescueCase :
+                manager.getCases()) {
+
+            System.out.println(
+                    rescueCase.generateSummary());
+        }
+    }
+
+    // ======================================================
+    // START RESCUE
+    // ======================================================
+
+    private static void startRescue() {
+
+        String caseId =
+                readText(
+                        "Enter case ID to start rescue: ");
+
+        manager.startRescue(caseId);
+
+        System.out.println(
+                "Rescue started successfully.");
+    }
+
+    // ======================================================
+    // COMPLETE RESCUE
+    // ======================================================
+
+    private static void completeRescue() {
+
+        String caseId =
+                readText(
+                        "Enter case ID to complete rescue: ");
+
+        manager.completeRescue(caseId);
+
+        System.out.println(
+                "Rescue completed successfully.");
+    }
+
+    // ======================================================
+    // INPUT METHODS
+    // ======================================================
+
+    private static String readText(
+            String prompt) {
+
+        while (true) {
+
+            System.out.print(prompt);
+
+            String input =
+                    scanner.nextLine().trim();
+
+            if (!input.isEmpty()) {
+
+                return input;
+            }
+
+            System.out.println(
+                    "Input cannot be empty. "
+                    + "Please try again.");
+        }
+    }
+
+    private static int readInt(
+            String prompt) {
+
+        while (true) {
+
+            System.out.print(prompt);
+
+            String input =
+                    scanner.nextLine().trim();
+
+            try {
+
+                return Integer.parseInt(input);
+
+            } catch (NumberFormatException e) {
+
+                System.out.println(
+                        "Please enter a valid "
+                        + "whole number.");
+            }
+        }
+    }
+
+    private static int readPositiveInt(
+            String prompt) {
+
+        while (true) {
+
+            int value =
+                    readInt(prompt);
+
+            if (value > 0) {
+
+                return value;
+            }
+
+            System.out.println(
+                    "Value must be greater than 0.");
+        }
+    }
+
+    private static int readNonNegativeInt(
+            String prompt) {
+
+        while (true) {
+
+            int value =
+                    readInt(prompt);
+
+            if (value >= 0) {
+
+                return value;
+            }
+
+            System.out.println(
+                    "Value cannot be negative.");
+        }
+    }
+
+    private static double readNonNegativeDouble(
+            String prompt) {
+
+        while (true) {
+
+            System.out.print(prompt);
+
+            String input =
+                    scanner.nextLine().trim();
+
+            try {
+
+                double value =
+                        Double.parseDouble(input);
+
+                if (value >= 0) {
+
+                    return value;
+                }
+
+                System.out.println(
+                        "Value cannot be negative.");
+
+            } catch (NumberFormatException e) {
+
+                System.out.println(
+                        "Please enter a valid number.");
+            }
+        }
+    }
+
+    private static boolean readYesNo(
+            String prompt) {
+
+        while (true) {
+
+            System.out.print(prompt);
+
+            String input =
+                    scanner.nextLine()
+                            .trim()
+                            .toLowerCase(Locale.ROOT);
+
+            if (input.equals("y")
+                    || input.equals("yes")) {
+
+                return true;
+            }
+
+            if (input.equals("n")
+                    || input.equals("no")) {
+
+                return false;
+            }
+
+            System.out.println(
+                    "Please enter Y or N.");
+        }
+    }
